@@ -157,7 +157,6 @@ class Certificate_List extends WP_List_Table {
     public function get_sortable_columns() {
         $sortable_columns = array(
             "display_name"      => array( "display_name", true ),
-            "email"             => array( "email", true ),
         );
         return $sortable_columns;
     }
@@ -221,58 +220,124 @@ class Certificate_List extends WP_List_Table {
 
         global $wpdb;
 
-        $user_ids = array();
-        if( isset($_GET["course_id"]) && !empty( $_GET["course_id"] ) ) {
+        $users_ids = $user_extra_args = array();
 
-            $users      = learndash_get_users_for_course($_GET["course_id"], array(), false);
-            $user_ids   = $users->results;
-            
-            if( $count ) {
-                return count( $user_ids );
+        if ( isset( $_GET['group_id'] ) ) {
+            $filter_group_id = intval( $_GET['group_id'] );
+            if ( !empty( $filter_group_id ) ) {
+                if ( learndash_is_group_leader_user( get_current_user_id() ) ) {
+                    $group_ids = learndash_get_administrators_group_ids( get_current_user_id() );
+                    
+                    // If the Group Leader doesn't have groups or not a managed group them clear our selected group_id
+                    if ( ( empty( $group_ids ) ) || ( in_array( $filter_group_id, $group_ids ) === false ) ) {
+                        $filter_group_id = 0;
+                    }
+                }
+                
+                if ( !empty( $filter_group_id ) ) {
+                    
+                    $user_extra_args["meta_key"]        = 'learndash_group_users_'. $filter_group_id;
+                    $user_extra_args["meta_value"]      = $filter_group_id;
+                    $user_extra_args["meta_compare"]    = '=';
+                }
             }
         }
-
-
-        /*if( isset($_GET["group_id"]) && !empty( $_GET["group_id"] ) ) {
-
-            $users      = learndash_get_groups_users($_GET["group_id"], array(), false);
-            $user_ids   = wp_list_pluck( $users, "ID", 2 );
-            
-            if( $count ) {
-                return count( $user_ids );
-            }
-        }*/
         
-        $user_extra_args = array();
-
-        if( !isset( $_GET["s"] ) || isset( $_GET["s"] ) && empty( $_GET["s"] ) ) {
-            $user_extra_args = array(
-                "include"   =>  $user_ids,
-                "number"    =>  $count ? 100000 : $per_page,
-                "offset"    =>  $page_number,
-            );
+        if ( isset( $_GET['course_id'] ) ) {
+            $filter_course_id = intval( $_GET['course_id'] );
+            if ( !empty( $filter_course_id ) ) {
+                if ( learndash_is_group_leader_user( get_current_user_id() ) ) {
+                    $group_ids = learndash_get_administrators_group_ids( get_current_user_id() );
+                    if ( ! empty( $group_ids ) && is_array( $group_ids ) ) {
+                        $course_ids = array();
+                        foreach( $group_ids as $group_id ) {
+                            $group_course_ids = learndash_group_enrolled_courses( $group_id );
+                            if ( ! empty( $group_course_ids ) && is_array( $group_course_ids ) ) {
+                                $course_ids = array_merge( $course_ids, $group_course_ids );
+                            }
+                        }
+                        if ( empty( $course_ids ) ) {
+                            $filter_course_id = 0;
+                        } 
+                
+                    }
+                }
+                
+                if ( !empty( $filter_course_id ) ) {
+                    $course_users_query = learndash_get_users_for_course( $filter_course_id, array(), false );
+                    if ( ( $course_users_query instanceof WP_User_Query ) && ( property_exists( $course_users_query, 'results' ) ) && ( !empty( $course_users_query->results ) ) ) {    
+                        $user_ids = $course_users_query->get_results();
+                        if ( !empty( $user_ids ) ) {
+                            $users_ids = $user_ids;
+                        } 
+                    } else {
+                        $users_ids = array(0);
+                    }
+                }
+            }
         }
+        
+        
 
-        if( isset($_GET["course_id"], $_GET["date_from"], $_GET["date_to"]) && !empty($_GET["course_id"]) && !empty($_GET["date_from"]) || !empty($_GET["date_to"]) ) {
-            $user_extra_args = array(
-                "include"   =>  $user_ids,
-                "number"    =>  100000,
-                "offset"    =>  $page_number,
-            );
+        if( !empty( $users_ids ) ) {
+            foreach ($users_ids as $key => $user_id) {
+                if( isset($_GET["course_id"], $_GET["date_from"], $_GET["date_to"]) && !empty($_GET["course_id"]) ) {
+
+                    $exit_loop  = $started = false;
+
+                    $course_id  = $_GET["course_id"];
+                    $element    = Learndash_Admin_Settings_Data_Upgrades::get_instance();
+                    $format     = 'm-d-Y';
+                    $date_query = "";
+
+
+                    if( !empty( $_GET["date_from"] ) ) {
+                        list($start_date_1, $start_date_2) = explode(" - ", $_GET["date_from"]);
+                        $start_time_1   = strtotime( $start_date_1 );
+                        $start_time_2   = strtotime( $start_date_2 );
+                        $date_query    .= " AND activity_started BETWEEN ".$start_time_1." AND ".$start_time_2;
+                    }
+
+
+                    if( !empty( $_GET["date_to"] ) ) {
+                        list($end_date_1, $end_date_2) = explode(" - ", $_GET["date_to"]);
+                        $end_time_1     = strtotime( $end_date_1 );
+                        $end_time_2     = strtotime( $end_date_2 );
+                        $date_query    .= " AND activity_completed BETWEEN ".$end_time_1." AND ".$end_time_2;
+                    }
+
+
+                    $sql_str = $wpdb->prepare("SELECT * FROM ". $wpdb->prefix ."learndash_user_activity WHERE user_id=%d AND course_id=%d AND post_id=%d AND activity_type=%s " . $date_query . " LIMIT 1", $user_id, $course_id, $course_id, "course" );
+
+                    $activity = $wpdb->get_row( $sql_str );
+                    
+                    if( isset($_GET["date_from"], $_GET["date_to"]) && !empty($_GET["date_from"]) || !empty($_GET["date_to"]) ) {
+                        if( !$activity || is_null( $activity ) || empty($activity) ) {
+                            unset($users_ids[$key]);
+                        }
+                    }
+                }
+            }
         }
+        
+        $user_extra_args["include"]    = $users_ids;
         
         $user_args = [
             "orderby"   =>  isset($_GET["orderby"]) && $_GET["orderby"] == "username" ? "display_name" : "display_name",
             "order"     =>  isset($_GET["order"]) ? $_GET["order"] : "asc",
-            "search"    =>  isset($_GET["s"]) ? $_GET["s"] : ""
+            "search"    =>  isset($_GET["s"]) ? $_GET["s"] : "",
+            "offset"    =>  $page_number,
+            "number"    =>  $per_page,
         ];
 
         $user_args  =   wp_parse_args( $user_extra_args, $user_args );
 
-        $users = get_users( $user_args );
+        $user_search = new WP_User_Query( $user_args );
+
+        $users = $user_search->get_results();
         
         if( $count ) {
-            return count($users);
+            return $user_search->get_total();
         }
 
         $data = array();
@@ -281,7 +346,7 @@ class Certificate_List extends WP_List_Table {
 
             $user_id    = $user->ID;
 
-            if( isset($_GET["course_id"], $_GET["date_from"], $_GET["date_to"]) && !empty($_GET["course_id"]) ) {
+            /*if( isset($_GET["course_id"], $_GET["date_from"], $_GET["date_to"]) && !empty($_GET["course_id"]) ) {
 
                 $exit_loop  = $started = false;
                 $course_id  = $_GET["course_id"];
@@ -292,9 +357,6 @@ class Certificate_List extends WP_List_Table {
 
                 if( !empty( $_GET["date_from"] ) ) {
                     list($start_date_1, $start_date_2) = explode(" - ", $_GET["date_from"]);
-                    /*$start_date_obj = DateTime::createFromFormat($format, $_GET["date_from"]);
-                    $started        = $start_date_obj->getTimestamp();
-                    $date_query    .= " AND activity_started >= " . $started; */
                     $start_time_1   = strtotime( $start_date_1 );
                     $start_time_2   = strtotime( $start_date_2 );
                     $date_query    .= " AND activity_started BETWEEN ".$start_time_1." AND ".$start_time_2;
@@ -303,9 +365,6 @@ class Certificate_List extends WP_List_Table {
 
                 if( !empty( $_GET["date_to"] ) ) {
                     list($end_date_1, $end_date_2) = explode(" - ", $_GET["date_to"]);
-                    /*$end_date_obj   = DateTime::createFromFormat($format, $_GET["date_to"]);
-                    $ended          = $end_date_obj->getTimestamp();
-                    $date_query    .= " AND activity_completed <= " . $ended . " AND activity_status = 1 " ; */
                     $end_time_1     = strtotime( $end_date_1 );
                     $end_time_2     = strtotime( $end_date_2 );
                     $date_query    .= " AND activity_completed BETWEEN ".$end_time_1." AND ".$end_time_2;
@@ -316,16 +375,6 @@ class Certificate_List extends WP_List_Table {
 
                 $activity = $wpdb->get_row( $sql_str );
 
-
-                /*$args       = array(
-                    "user_id"       =>   $user_id,
-                    "post_id"       =>   $course_id,
-                    "course_id"     =>   $course_id,
-                    "activity_type" =>  "course"
-                );
-                
-                $activity   = learndash_get_user_activity( $args );
-                */
                 if( isset($_GET["date_from"], $_GET["date_to"]) && !empty($_GET["date_from"]) || !empty($_GET["date_to"]) ) {
                     if( $activity) {
                         if( $exit_loop ) {
@@ -335,12 +384,11 @@ class Certificate_List extends WP_List_Table {
                         continue;
                     }
                 }
-            }
+            }*/
 
 
             $data[$key]["display_name"]     = $user->data->display_name;
             $data[$key]["user_id"]          = $user_id;
-            //$data[$key]["course_ids"]       = learndash_user_get_enrolled_courses( $user_id );
             $data[$key]["assigned_date"]    = $user->data->display_name;
             $data[$key]["email"]            = $user->data->user_email;
 

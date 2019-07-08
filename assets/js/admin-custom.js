@@ -61,7 +61,7 @@ jQuery(function( $ ){
         return false;
       }
 
-      if( group_id == "" || course_id == "" ) {
+      if( course_id == "" ) {
         alert("Please choose the course from dropdown");
         $("#course_filter").focus();
         return false;
