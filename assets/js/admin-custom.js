@@ -56,13 +56,13 @@ jQuery(function( $ ){
       console.log(group_id, course_id);
 
       if( group_id != "" && course_id == "" ) {
-        alert("Please choose the course from dropdown");
+        alert("Please choose the Course from dropdown");
         $("#course_filter").focus();
         return false;
       }
 
       if( course_id == "" ) {
-        alert("Please choose the course from dropdown");
+        alert("Please choose the Group or Course from dropdown");
         $("#course_filter").focus();
         return false;
       }

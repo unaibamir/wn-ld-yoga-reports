@@ -32,7 +32,7 @@ class WOO_LD_Reporting {
         wp_enqueue_script('moment-js', WOO_LEARNDASH_REPORTS_ASSETS_URL . '/js/moment.min.js', array('jquery'), "", false);
         wp_enqueue_script('daterange-js', WOO_LEARNDASH_REPORTS_ASSETS_URL . '/js/daterangepicker.min.js', array('moment-js'), "", false);
 
-        wp_enqueue_script( "admin-custom-js", WOO_LEARNDASH_REPORTS_ASSETS_URL . "/js/admin-custom.js", array( "jquery", "moment-js", "daterange-js" ), "", true );
+        wp_enqueue_script( "admin-custom-js", WOO_LEARNDASH_REPORTS_ASSETS_URL . "/js/admin-custom.js", array( "jquery", "moment-js", "daterange-js" ), time(), true );
     }
 
     /**
@@ -140,7 +140,7 @@ dd.course_progress div.course_progress_blue {
                 <input type="hidden" name="page" value="<?php echo $_REQUEST['page'] ?>" />                
                 <?php
                 $this->users_obj->prepare_items();
-                $this->users_obj->search_box('Search', 'search');
+                //$this->users_obj->search_box('Search', 'search');
                 $this->users_obj->display();
                 ?>
                 <input type="hidden" name="_wp_http_referer" value="<?php echo $submit_url; ?>">
